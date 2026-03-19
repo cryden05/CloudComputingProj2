@@ -1,4 +1,4 @@
-// ------------------------------
+﻿// ------------------------------
 // Mock Data (used until API is ready)
 // ------------------------------
 const mockData = {
@@ -6,16 +6,17 @@ const mockData = {
   protein: [45, 70, 60],
   carbs: [60, 20, 35],
   fat: [20, 80, 55],
-  // simple 3x3 correlation matrix for the heatmap (protein, carbs, fat)
   correlations: [
-    [1.00, 0.30, 0.65], // protein vs (protein, carbs, fat)
-    [0.30, 1.00, 0.10], // carbs
-    [0.65, 0.10, 1.00]  // fat
+    [1.0, 0.3, 0.65],
+    [0.3, 1.0, 0.1],
+    [0.65, 0.1, 1.0]
   ],
-  metrics: ["Protein", "Carbs", "Fat"]
+  metrics: ["Protein(g)", "Carbs(g)", "Fat(g)"]
 };
 
-// Keep the last dataset so filters/refresh can reuse it later
+// Set this to the deployed Azure Function URL after deployment.
+const API_URL = "https://<YOUR-FUNCTION-APP>.azurewebsites.net/api/getDietData";
+
 let lastDataset = {
   diets: [...mockData.diets],
   protein: [...mockData.protein],
@@ -30,9 +31,6 @@ let lastDataset = {
   }
 };
 
-// ------------------------------
-// Status & Metadata helpers
-// ------------------------------
 function showStatus(msg, kind = "info") {
   const el = document.getElementById("status");
   if (!el) return;
@@ -47,23 +45,24 @@ function showStatus(msg, kind = "info") {
   el.style.opacity = "1";
   el.classList.remove("hidden");
   clearTimeout(el._hideTimer);
-  el._hideTimer = setTimeout(() => { el.style.opacity = "0"; }, 1800);
+  el._hideTimer = setTimeout(() => {
+    el.style.opacity = "0";
+  }, 1800);
 }
 
 function renderMeta({ executionTimeMs, timestamp, recordCount } = {}) {
   const el = document.getElementById("meta");
   if (!el) return;
   el.innerHTML = `
-    <p><span class="font-semibold">Last Run:</span> ${timestamp ?? "—"}</p>
-    <p><span class="font-semibold">Execution Time:</span> ${executionTimeMs != null ? executionTimeMs + " ms" : "—"}</p>
-    <p><span class="font-semibold">Records:</span> ${recordCount ?? "—"}</p>
+    <p><span class="font-semibold">Last Run:</span> ${timestamp ?? "-"}</p>
+    <p><span class="font-semibold">Execution Time:</span> ${executionTimeMs != null ? executionTimeMs + " ms" : "-"}</p>
+    <p><span class="font-semibold">Records:</span> ${recordCount ?? "-"}</p>
   `;
 }
 
-// ------------------------------
-// Chart builders (create or update)
-// ------------------------------
-let barChart, pieChart, scatterChart;
+let barChart;
+let pieChart;
+let scatterChart;
 
 function buildOrUpdateBar(labels, protein) {
   const ctx = document.getElementById("barChart");
@@ -79,7 +78,10 @@ function buildOrUpdateBar(labels, protein) {
     },
     options: {
       responsive: true,
-      plugins: { title: { display: true, text: "Average Protein by Diet Type" }, legend: { display: true } },
+      plugins: {
+        title: { display: true, text: "Average Protein by Diet Type" },
+        legend: { display: true }
+      },
       scales: {
         y: {
           title: { display: true, text: "Grams" },
@@ -88,12 +90,15 @@ function buildOrUpdateBar(labels, protein) {
       }
     }
   };
-  if (!barChart) barChart = new Chart(ctx, cfg);
-  else {
-    barChart.data.labels = labels;
-    barChart.data.datasets[0].data = protein;
-    barChart.update();
+
+  if (!barChart) {
+    barChart = new Chart(ctx, cfg);
+    return;
   }
+
+  barChart.data.labels = labels;
+  barChart.data.datasets[0].data = protein;
+  barChart.update();
 }
 
 function buildOrUpdatePie(labels, carbs) {
@@ -112,12 +117,15 @@ function buildOrUpdatePie(labels, carbs) {
       plugins: { title: { display: true, text: "Carbohydrate Distribution" } }
     }
   };
-  if (!pieChart) pieChart = new Chart(ctx, cfg);
-  else {
-    pieChart.data.labels = labels;
-    pieChart.data.datasets[0].data = carbs;
-    pieChart.update();
+
+  if (!pieChart) {
+    pieChart = new Chart(ctx, cfg);
+    return;
   }
+
+  pieChart.data.labels = labels;
+  pieChart.data.datasets[0].data = carbs;
+  pieChart.update();
 }
 
 function buildOrUpdateScatter(carbs, protein) {
@@ -125,7 +133,13 @@ function buildOrUpdateScatter(carbs, protein) {
   const points = carbs.map((c, i) => ({ x: c, y: protein[i] }));
   const cfg = {
     type: "scatter",
-    data: { datasets: [{ label: "Protein vs Carbs", data: points, backgroundColor: "rgba(239, 68, 68, 0.8)" }] },
+    data: {
+      datasets: [{
+        label: "Protein vs Carbs",
+        data: points,
+        backgroundColor: "rgba(239, 68, 68, 0.8)"
+      }]
+    },
     options: {
       responsive: true,
       plugins: { title: { display: true, text: "Protein vs Carbohydrates" } },
@@ -135,27 +149,23 @@ function buildOrUpdateScatter(carbs, protein) {
       }
     }
   };
-  if (!scatterChart) scatterChart = new Chart(ctx, cfg);
-  else {
-    scatterChart.data.datasets[0].data = points;
-    scatterChart.update();
+
+  if (!scatterChart) {
+    scatterChart = new Chart(ctx, cfg);
+    return;
   }
+
+  scatterChart.data.datasets[0].data = points;
+  scatterChart.update();
 }
 
-// ------------------------------
-// Heatmap (no extra libs) — renders into #heatmap
-// ------------------------------
 function buildOrUpdateHeatmap(matrix, labels) {
   const container = document.getElementById("heatmap");
   if (!container) return;
 
-  // Clear previous content
   container.innerHTML = "";
-
-  // Basic styles
   container.className = "w-full h-48 overflow-auto";
 
-  // Create a grid using CSS
   const size = labels.length;
   const grid = document.createElement("div");
   grid.style.display = "grid";
@@ -163,53 +173,50 @@ function buildOrUpdateHeatmap(matrix, labels) {
   grid.style.gap = "4px";
   grid.style.alignItems = "center";
 
-  // Color scale helper: value ∈ [0,1] -> from white to teal
-  const colorFor = (v) => {
-    const clamped = Math.max(0, Math.min(1, v));
-    const r = Math.round(255 - clamped * 155); // 255 -> 100
-    const g = Math.round(255 - clamped * 60);  // 255 -> 195
-    const b = Math.round(255 - clamped * 205); // 255 -> 50
+  const colorFor = value => {
+    const clamped = Math.max(0, Math.min(1, value));
+    const r = Math.round(255 - clamped * 155);
+    const g = Math.round(255 - clamped * 60);
+    const b = Math.round(255 - clamped * 205);
     return `rgb(${r},${g},${b})`;
   };
 
-  // Header row (top-left empty, then metric labels)
   const emptyCorner = document.createElement("div");
   emptyCorner.textContent = "";
   emptyCorner.style.fontWeight = "600";
   emptyCorner.style.padding = "4px 8px";
   grid.appendChild(emptyCorner);
 
-  labels.forEach(l => {
+  labels.forEach(label => {
     const cell = document.createElement("div");
-    cell.textContent = l;
+    cell.textContent = label;
     cell.style.fontWeight = "600";
     cell.style.fontSize = "12px";
     cell.style.padding = "4px 8px";
     grid.appendChild(cell);
   });
 
-  // Rows: label + colored cells
-  for (let r = 0; r < size; r++) {
+  for (let rowIndex = 0; rowIndex < size; rowIndex += 1) {
     const rowLabel = document.createElement("div");
-    rowLabel.textContent = labels[r];
+    rowLabel.textContent = labels[rowIndex];
     rowLabel.style.fontWeight = "600";
     rowLabel.style.fontSize = "12px";
     rowLabel.style.padding = "4px 8px";
     grid.appendChild(rowLabel);
 
-    for (let c = 0; c < size; c++) {
-      const v = matrix[r][c]; // expected 0..1 (1.0 on diagonal)
+    for (let colIndex = 0; colIndex < size; colIndex += 1) {
+      const value = matrix[rowIndex][colIndex];
       const cell = document.createElement("div");
-      cell.title = `${labels[r]} vs ${labels[c]}: ${v.toFixed(2)}`;
-      cell.style.background = colorFor(v);
+      cell.title = `${labels[rowIndex]} vs ${labels[colIndex]}: ${value.toFixed(2)}`;
+      cell.style.background = colorFor(value);
       cell.style.height = "28px";
       cell.style.borderRadius = "6px";
       cell.style.display = "flex";
       cell.style.alignItems = "center";
       cell.style.justifyContent = "center";
       cell.style.fontSize = "11px";
-      cell.style.color = v > 0.6 ? "#fff" : "#111";
-      cell.textContent = v.toFixed(2);
+      cell.style.color = value > 0.6 ? "#fff" : "#111";
+      cell.textContent = value.toFixed(2);
       grid.appendChild(cell);
     }
   }
@@ -217,9 +224,6 @@ function buildOrUpdateHeatmap(matrix, labels) {
   container.appendChild(grid);
 }
 
-// ------------------------------
-// Bootstrap with mock data
-// ------------------------------
 function renderAllFrom(data) {
   buildOrUpdateBar(data.diets, data.protein);
   buildOrUpdatePie(data.diets, data.carbs);
@@ -228,72 +232,52 @@ function renderAllFrom(data) {
   renderMeta(data.meta);
 }
 
-renderAllFrom(lastDataset);
+function normalizeBackendPayload(data) {
+  const proteinRows = Array.isArray(data?.protein) ? data.protein : [];
+  const carbRows = Array.isArray(data?.carbs) ? data.carbs : [];
+  const fatRows = Array.isArray(data?.fat) ? data.fat : [];
 
-// ------------------------------
-// Refresh button: simulate new data now; call API later
-// ------------------------------
-const refreshBtn = document.getElementById("refreshData");
-if (refreshBtn) {
-  refreshBtn.addEventListener("click", async () => {
-    // For now: simulate a refresh (mock jitter). Later: call fetchInsights()
-    showStatus("Refreshing…");
-    const jitter = () => Math.max(0, Math.round((Math.random() * 10) - 5));
-    const refreshed = {
-      ...lastDataset,
-      protein: lastDataset.protein.map(v => Math.max(0, v + jitter())),
-      carbs: lastDataset.carbs.map(v => Math.max(0, v + jitter())),
-      // lightly wiggle correlations towards/within [0,1]
-      correlations: lastDataset.correlations.map(row =>
-        row.map(v => Math.max(0, Math.min(1, v + (Math.random() - 0.5) * 0.05)))
-      ),
-      meta: {
-        timestamp: new Date().toISOString(),
-        executionTimeMs: 80 + Math.floor(Math.random() * 120),
-        recordCount: lastDataset.diets.length
-      }
-    };
-    lastDataset = refreshed;
-    renderAllFrom(lastDataset);
-    showStatus("Updated", "success");
-  });
+  const diets = proteinRows.map(item => item["Diet_type"]);
+  const protein = proteinRows.map(item => Number(item["Protein(g)"] ?? 0));
+  const carbs = carbRows.map(item => Number(item["Carbs(g)"] ?? 0));
+  const fat = fatRows.map(item => Number(item["Fat(g)"] ?? 0));
+
+  const metrics = data?.correlations
+    ? Object.keys(data.correlations)
+    : ["Protein(g)", "Carbs(g)", "Fat(g)"];
+
+  const correlations = metrics.map(rowKey =>
+    metrics.map(colKey => Number(data?.correlations?.[rowKey]?.[colKey] ?? 0))
+  );
+
+  return {
+    diets,
+    protein,
+    carbs,
+    fat,
+    correlations,
+    metrics,
+    meta: data?.meta ?? {
+      timestamp: new Date().toISOString(),
+      executionTimeMs: null,
+      recordCount: diets.length
+    }
+  };
 }
 
-// ------------------------------
-// API integration (replace URL and call fetchInsights() instead of mock)
-// ------------------------------
 async function fetchInsights() {
-  const url = "https://<YOUR-FUNCTION-APP>.azurewebsites.net/api/insights"; // Replace when backend is ready
+  if (API_URL.includes("<YOUR-FUNCTION-APP>")) {
+    showStatus("Set the deployed Azure Function URL first", "error");
+    return;
+  }
+
   try {
-    showStatus("Loading…");
-    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    showStatus("Loading...", "info");
+    const res = await fetch(API_URL, { headers: { Accept: "application/json" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     const data = await res.json();
-
-    // Expected payload shape:
-    // {
-    //   diets: string[],
-    //   protein: number[],
-    //   carbs: number[],
-    //   fat?: number[],
-    //   correlations?: number[][], // values 0..1
-    //   metrics?: string[],        // labels for correlations
-    //   meta: { timestamp, executionTimeMs, recordCount }
-    // }
-
-    if (!data?.diets || !data?.protein || !data?.carbs) throw new Error("Unexpected payload");
-
-    // Provide defaults for heatmap if backend doesn’t return them
-    if (!data.correlations || !data.metrics) {
-      data.metrics = ["Protein", "Carbs", "Fat"];
-      data.correlations = [
-        [1.00, 0.30, 0.65],
-        [0.30, 1.00, 0.10],
-        [0.65, 0.10, 1.00]
-      ];
-    }
-
-    lastDataset = data;
+    lastDataset = normalizeBackendPayload(data);
     renderAllFrom(lastDataset);
     showStatus("Updated", "success");
   } catch (err) {
@@ -302,6 +286,9 @@ async function fetchInsights() {
   }
 }
 
-// If you want to use the API immediately, swap the click handler to:
-// refreshBtn?.removeEventListener("click", ...); // remove old if needed
-// refreshBtn?.addEventListener("click", fetchInsights);
+renderAllFrom(lastDataset);
+
+const refreshBtn = document.getElementById("refreshData");
+if (refreshBtn) {
+  refreshBtn.addEventListener("click", fetchInsights);
+}
