@@ -1,35 +1,27 @@
-﻿// ------------------------------
-// Mock Data (used until API is ready)
-// ------------------------------
-const mockData = {
-  diets: ["Vegan", "Keto", "Paleo"],
-  protein: [45, 70, 60],
-  carbs: [60, 20, 35],
-  fat: [20, 80, 55],
-  correlations: [
-    [1.0, 0.3, 0.65],
-    [0.3, 1.0, 0.1],
-    [0.65, 0.1, 1.0]
-  ],
-  metrics: ["Protein(g)", "Carbs(g)", "Fat(g)"]
-};
+// Use the deployed Azure Function route exactly as defined in the backend.
+const API_URL = "https://project2functionapp.azurewebsites.net/api/getDietData";
 
-// Set this to the deployed Azure Function URL after deployment.
-const API_URL = "https://<YOUR-FUNCTION-APP>.azurewebsites.net/api/getDietData";
+function createFallbackDataset() {
+  return {
+    diets: ["Vegan", "Keto", "Paleo"],
+    protein: [45, 70, 60],
+    carbs: [60, 20, 35],
+    fat: [20, 80, 55],
+    correlations: [
+      [1.0, 0.3, 0.65],
+      [0.3, 1.0, 0.1],
+      [0.65, 0.1, 1.0]
+    ],
+    metrics: ["Protein(g)", "Carbs(g)", "Fat(g)"],
+    meta: {
+      timestamp: new Date().toISOString(),
+      executionTimeMs: 120,
+      recordCount: 3
+    }
+  };
+}
 
-let lastDataset = {
-  diets: [...mockData.diets],
-  protein: [...mockData.protein],
-  carbs: [...mockData.carbs],
-  fat: [...mockData.fat],
-  correlations: mockData.correlations.map(row => [...row]),
-  metrics: [...mockData.metrics],
-  meta: {
-    timestamp: new Date().toISOString(),
-    executionTimeMs: 120,
-    recordCount: mockData.diets.length
-  }
-};
+let lastDataset = null;
 
 function showStatus(msg, kind = "info") {
   const el = document.getElementById("status");
@@ -47,7 +39,7 @@ function showStatus(msg, kind = "info") {
   clearTimeout(el._hideTimer);
   el._hideTimer = setTimeout(() => {
     el.style.opacity = "0";
-  }, 1800);
+  }, 2400);
 }
 
 function renderMeta({ executionTimeMs, timestamp, recordCount } = {}) {
@@ -233,11 +225,14 @@ function renderAllFrom(data) {
 }
 
 function normalizeBackendPayload(data) {
+  const dietRows = Array.isArray(data?.diets) ? data.diets : [];
   const proteinRows = Array.isArray(data?.protein) ? data.protein : [];
   const carbRows = Array.isArray(data?.carbs) ? data.carbs : [];
   const fatRows = Array.isArray(data?.fat) ? data.fat : [];
 
-  const diets = proteinRows.map(item => item["Diet_type"]);
+  const diets = proteinRows.length
+    ? proteinRows.map(item => item["Diet_type"])
+    : dietRows.map(item => item["Diet_type"]);
   const protein = proteinRows.map(item => Number(item["Protein(g)"] ?? 0));
   const carbs = carbRows.map(item => Number(item["Carbs(g)"] ?? 0));
   const fat = fatRows.map(item => Number(item["Fat(g)"] ?? 0));
@@ -282,13 +277,17 @@ async function fetchInsights() {
     showStatus("Updated", "success");
   } catch (err) {
     console.error(err);
-    showStatus("Failed to load insights", "error");
+    if (!lastDataset) {
+      lastDataset = createFallbackDataset();
+      renderAllFrom(lastDataset);
+    }
+    showStatus(`Failed to load insights: ${err.message}`, "error");
   }
 }
-
-renderAllFrom(lastDataset);
 
 const refreshBtn = document.getElementById("refreshData");
 if (refreshBtn) {
   refreshBtn.addEventListener("click", fetchInsights);
 }
+
+fetchInsights();
