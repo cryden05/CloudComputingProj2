@@ -77,8 +77,8 @@ The dashboard includes at least three required visualizations:
 Replace the placeholders below with your actual deployed links before submission.
 
 - Azure Function URL: `https://project2functionapp.azurewebsites.net/api/getDietData`
-- Frontend Deployment URL: `[Add your deployed frontend URL here]`
-- GitHub Repository URL: `[Add your repository URL here]`
+- Frontend Deployment URL: `https://proud-coast-06e36830f.4.azurestaticapps.net/`
+- GitHub Repository URL: `https://github.com/cryden05/CloudComputingProj2`
 
 ## How the Dashboard Works
 1. A user opens the dashboard page.
