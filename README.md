@@ -11,10 +11,11 @@ The goal of Phase 2 is to move the Phase 1 local solution into Azure and demonst
 
 ## Architecture
 1. The diet dataset CSV is stored in Azure Blob Storage.
-2. The Azure Function reads the CSV from Blob Storage.
-3. The function cleans and aggregates the dataset using pandas.
-4. The function returns JSON containing diet counts, average nutrients, correlations, and execution metadata.
-5. The frontend fetches the Azure Function endpoint and renders charts in the browser using Chart.js.
+2. A blob-triggered Azure Function watches `All_Diets.csv` and runs the cleaning pipeline only when the source blob changes.
+3. The pipeline saves a cleaned CSV and precomputes JSON results for dashboard insights and recipe browsing.
+4. The precomputed artifacts are stored back in Blob Storage as cache blobs.
+5. HTTP requests read the cache instead of recalculating analytics on every request.
+6. The frontend fetches the Azure Function endpoint and renders charts in the browser using Chart.js.
 
 ## Project Structure
 ```text
@@ -38,19 +39,28 @@ Backend files are located in `backend/`.
 
 ### Backend responsibilities
 - Connect to Azure Blob Storage using `AZURE_STORAGE_CONNECTION_STRING`
-- Read the `All_Diets (1).csv` dataset from the configured blob container
-- Compute:
+- Detect source blob changes using the source blob `etag`
+- Clean the source dataset once per source-file update
+- Save the cleaned dataset as `All_Diets_cleaned.csv`
+- Precompute:
   - diet counts
   - average protein by diet type
   - average carbs by diet type
   - average fat by diet type
   - nutrient correlations
-  - execution metadata
-- Return the results as JSON
+  - recipe browse index
+  - execution metadata for the pipeline
+- Store results in cache blobs
+- Return cached results as JSON for later requests
 
 ### Required environment variables
 - `AZURE_STORAGE_CONNECTION_STRING`
-- `CONTAINER_NAME` (optional, defaults to `datasets`)
+- `DATASET_CONTAINER_NAME` (optional, defaults to `datasets`)
+- `SOURCE_BLOB_NAME` (optional, defaults to `All_Diets.csv`)
+- `CLEANED_BLOB_NAME` (optional, defaults to `All_Diets_cleaned.csv`)
+- `INSIGHTS_CACHE_BLOB_NAME` (optional, defaults to `cache/diet_insights.json`)
+- `RECIPES_CACHE_BLOB_NAME` (optional, defaults to `cache/recipe_index.json`)
+- `PIPELINE_STATUS_BLOB_NAME` (optional, defaults to `cache/pipeline_status.json`)
 
 ## Frontend
 Frontend files are located in `frontend/`.
@@ -82,10 +92,23 @@ Replace the placeholders below with your actual deployed links before submission
 
 ## How the Dashboard Works
 1. A user opens the dashboard page.
-2. The frontend sends a request to the deployed Azure Function.
-3. The Azure Function reads the dataset from Azure Blob Storage.
-4. The function calculates insights and returns JSON.
-5. The frontend updates the visualizations and metadata using the returned data.
+2. If the dataset has changed, the blob trigger refreshes the cleaned CSV and cache blobs once.
+3. The frontend sends a request to the deployed Azure Function.
+4. The Azure Function reads the precomputed cache blobs instead of recalculating from the source CSV.
+5. The frontend updates the visualizations and metadata using the cached JSON response.
+
+## Cache and Trigger Endpoints
+- `GET /api/getDietData`: returns cached dashboard analytics
+- `GET /api/browseRecipes`: returns cached recipe data with request-time filtering and pagination
+- `GET /api/cacheStatus`: returns the latest pipeline metadata so you can demo the current cached source `etag`, source blob, and last pipeline run
+
+## Demo Flow For Performance / Backend Optimization
+1. Upload or modify `All_Diets.csv` in the configured blob container.
+2. Wait for the blob trigger to run once and refresh the cache.
+3. Open `GET /api/cacheStatus` and note the `sourceEtag` and `pipelineGeneratedAt` values.
+4. Call `GET /api/getDietData` two or more times.
+5. Show that the response metadata includes `requestServedFromCache: true` and does not require recalculation.
+6. Modify the CSV again and repeat the check to show the `sourceEtag` changes and the pipeline runs one more time.
 
 ## Technologies Used
 - HTML
@@ -106,9 +129,12 @@ Make sure the `API_URL` in `frontend/script.js` points to the deployed Azure Fun
 ## Testing Checklist
 - Azure Function endpoint returns JSON successfully
 - Dataset is read from Azure Blob Storage
+- Blob trigger runs when the source CSV changes
+- Cleaned CSV blob is written successfully
+- Cache blobs are written successfully
 - Dashboard loads live data on page load
 - Charts update from backend data instead of placeholder values
-- Execution metadata is shown on the page
+- Cache metadata is shown in API responses
 - Frontend is publicly accessible
 
 ## Challenges Encountered

@@ -210,16 +210,28 @@ function renderSummaryCards(metrics = {}, meta = {}) {
   }
 }
 
-function renderMeta({ executionTimeMs, timestamp, recordCount, sourceBlob } = {}) {
+function renderMeta({
+  executionTimeMs,
+  timestamp,
+  recordCount,
+  sourceBlob,
+  cacheStatus,
+  requestServedFromCache,
+  requestExecutionTimeMs,
+  sourceEtag
+} = {}) {
   if (!elements.meta) {
     return;
   }
 
   elements.meta.innerHTML = `
     <p><span class="font-semibold">Last Run:</span> ${escapeHtml(timestamp ?? "-")}</p>
-    <p><span class="font-semibold">Execution Time:</span> ${escapeHtml(formatValue(executionTimeMs, " ms"))}</p>
+    <p><span class="font-semibold">Pipeline Time:</span> ${escapeHtml(formatValue(executionTimeMs, " ms"))}</p>
+    <p><span class="font-semibold">Request Time:</span> ${escapeHtml(formatValue(requestExecutionTimeMs, " ms"))}</p>
     <p><span class="font-semibold">Records:</span> ${escapeHtml(formatValue(recordCount))}</p>
     <p><span class="font-semibold">Data Source:</span> ${escapeHtml(sourceBlob ?? "-")}</p>
+    <p><span class="font-semibold">Cache:</span> ${escapeHtml(requestServedFromCache ? "hit" : (cacheStatus ?? "-"))}</p>
+    <p><span class="font-semibold">Source ETag:</span> ${escapeHtml(sourceEtag ?? "-")}</p>
   `;
 }
 
@@ -455,11 +467,18 @@ function normalizeBackendPayload(data) {
     correlations,
     metrics: data?.metrics ?? {},
     metricLabels,
-    meta: data?.meta ?? {
-      timestamp: new Date().toISOString(),
-      executionTimeMs: null,
-      recordCount: labels.length
-    }
+    meta: data?.meta
+      ? {
+          timestamp: data.meta.timestamp ?? data.meta.pipelineGeneratedAt ?? new Date().toISOString(),
+          executionTimeMs: data.meta.executionTimeMs ?? data.meta.pipelineDurationMs ?? null,
+          recordCount: data.meta.recordCount ?? labels.length,
+          ...data.meta
+        }
+      : {
+          timestamp: new Date().toISOString(),
+          executionTimeMs: null,
+          recordCount: labels.length
+        }
   };
 }
 

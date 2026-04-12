@@ -8,12 +8,16 @@ from io import StringIO
 import azure.functions as func
 import pandas as pd
 from azure.core.exceptions import ResourceNotFoundError
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, ContentSettings
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-DEFAULT_SOURCE_BLOB = "All_Diets (1).csv"
+DEFAULT_SOURCE_BLOB = "All_Diets.csv"
+LEGACY_SOURCE_BLOB = "All_Diets (1).csv"
 DEFAULT_CLEANED_BLOB = "All_Diets_cleaned.csv"
+DEFAULT_INSIGHTS_CACHE_BLOB = "cache/diet_insights.json"
+DEFAULT_RECIPES_CACHE_BLOB = "cache/recipe_index.json"
+DEFAULT_PIPELINE_STATUS_BLOB = "cache/pipeline_status.json"
 DIET_COLUMN_CANDIDATES = ["Diet_type", "Diet Type", "diet_type", "diet"]
 TITLE_COLUMN_CANDIDATES = [
     "Recipe_name",
@@ -42,9 +46,13 @@ def json_response(payload: dict, status_code: int = 200) -> func.HttpResponse:
     )
 
 
+def utc_now_string() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
 def get_container_client():
     conn_str = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
-    container_name = os.environ.get("CONTAINER_NAME", "datasets")
+    container_name = os.environ.get("DATASET_CONTAINER_NAME", "datasets")
 
     if not conn_str:
         raise RuntimeError("Missing AZURE_STORAGE_CONNECTION_STRING")
@@ -53,32 +61,34 @@ def get_container_client():
     return blob_service.get_container_client(container_name)
 
 
-def load_dataset():
-    container_client = get_container_client()
-    source_blob = os.environ.get("SOURCE_BLOB_NAME", DEFAULT_SOURCE_BLOB)
-    cleaned_blob = os.environ.get("CLEANED_BLOB_NAME", DEFAULT_CLEANED_BLOB)
+def get_setting(name: str, default: str) -> str:
+    return (os.environ.get(name) or default).strip()
 
-    candidate_blobs = []
-    if cleaned_blob and cleaned_blob != source_blob:
-        candidate_blobs.append(cleaned_blob)
-    candidate_blobs.append(source_blob)
 
-    last_error = None
+def get_source_blob_candidates():
+    primary = get_setting("SOURCE_BLOB_NAME", DEFAULT_SOURCE_BLOB)
+    candidates = [primary]
 
-    for blob_name in candidate_blobs:
-        try:
-            blob_client = container_client.get_blob_client(blob_name)
-            blob_data = blob_client.download_blob().readall().decode("utf-8")
-            df = pd.read_csv(StringIO(blob_data))
-            return normalize_dataframe(df), blob_name
-        except ResourceNotFoundError as exc:
-            last_error = exc
-            continue
+    if primary != LEGACY_SOURCE_BLOB:
+        candidates.append(LEGACY_SOURCE_BLOB)
 
-    if last_error:
-        raise last_error
+    return candidates
 
-    raise RuntimeError("Unable to load dataset from blob storage.")
+
+def get_cleaned_blob_name() -> str:
+    return get_setting("CLEANED_BLOB_NAME", DEFAULT_CLEANED_BLOB)
+
+
+def get_insights_cache_blob_name() -> str:
+    return get_setting("INSIGHTS_CACHE_BLOB_NAME", DEFAULT_INSIGHTS_CACHE_BLOB)
+
+
+def get_recipes_cache_blob_name() -> str:
+    return get_setting("RECIPES_CACHE_BLOB_NAME", DEFAULT_RECIPES_CACHE_BLOB)
+
+
+def get_pipeline_status_blob_name() -> str:
+    return get_setting("PIPELINE_STATUS_BLOB_NAME", DEFAULT_PIPELINE_STATUS_BLOB)
 
 
 def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -90,6 +100,26 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             normalized[column] = normalized[column].fillna("").astype(str).str.strip()
 
     return normalized
+
+
+def load_source_dataframe(container_client):
+    last_error = None
+
+    for blob_name in get_source_blob_candidates():
+        try:
+            blob_client = container_client.get_blob_client(blob_name)
+            blob_data = blob_client.download_blob().readall().decode("utf-8")
+            df = pd.read_csv(StringIO(blob_data))
+            properties = blob_client.get_blob_properties()
+            return normalize_dataframe(df), blob_name, properties
+        except ResourceNotFoundError as exc:
+            last_error = exc
+            continue
+
+    if last_error:
+        raise last_error
+
+    raise RuntimeError("Unable to load dataset from blob storage.")
 
 
 def pick_first_available(columns, candidates):
@@ -148,7 +178,28 @@ def compute_group_mean(df: pd.DataFrame, group_column: str, value_column: str):
     )
 
 
-def build_insights_payload(df: pd.DataFrame, source_blob: str, start_time: float):
+def build_pipeline_meta(
+    source_blob: str,
+    source_etag: str,
+    source_last_modified,
+    pipeline_started_at: str,
+    pipeline_duration_ms: float,
+    trigger_reason: str,
+):
+    return {
+        "sourceBlob": source_blob,
+        "sourceEtag": source_etag,
+        "sourceLastModified": source_last_modified.isoformat() if source_last_modified else None,
+        "pipelineGeneratedAt": pipeline_started_at,
+        "pipelineDurationMs": round(pipeline_duration_ms, 2),
+        "timestamp": pipeline_started_at,
+        "executionTimeMs": round(pipeline_duration_ms, 2),
+        "triggerReason": trigger_reason,
+        "cacheState": "fresh",
+    }
+
+
+def build_insights_payload(df: pd.DataFrame, pipeline_meta: dict):
     diet_column = pick_first_available(df.columns, DIET_COLUMN_CANDIDATES)
 
     if diet_column:
@@ -181,14 +232,6 @@ def build_insights_payload(df: pd.DataFrame, source_blob: str, start_time: float
         "recordCount": len(df),
     }
 
-    execution_time = round((time.time() - start_time) * 1000, 2)
-    meta = {
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "executionTimeMs": execution_time,
-        "recordCount": len(df),
-        "sourceBlob": source_blob,
-    }
-
     return {
         "diets": diets,
         "protein": protein,
@@ -196,7 +239,10 @@ def build_insights_payload(df: pd.DataFrame, source_blob: str, start_time: float
         "fat": fat,
         "correlations": correlations,
         "metrics": metrics,
-        "meta": meta,
+        "meta": {
+            **pipeline_meta,
+            "recordCount": len(df),
+        },
     }
 
 
@@ -264,35 +310,11 @@ def build_recipe_items(df: pd.DataFrame, start_number: int = 1):
     return items
 
 
-def build_recipe_payload(
-    df: pd.DataFrame,
-    source_blob: str,
-    keyword: str,
-    diet_type: str,
-    page: int,
-    page_size: int,
-):
+def build_recipe_cache(df: pd.DataFrame, pipeline_meta: dict):
     diet_column = pick_first_available(df.columns, DIET_COLUMN_CANDIDATES)
     searchable_columns = get_searchable_columns(df, diet_column)
-    filtered_df = df.copy()
-
-    if diet_column and diet_type and diet_type.lower() != "all":
-        filtered_df = filtered_df[filtered_df[diet_column].str.casefold() == diet_type.casefold()]
-
-    if keyword:
-        keyword_mask = pd.Series(False, index=filtered_df.index)
-        for column in searchable_columns:
-            keyword_mask = keyword_mask | filtered_df[column].str.contains(keyword, case=False, na=False)
-        filtered_df = filtered_df[keyword_mask]
-
-    total_items = len(filtered_df)
-    total_pages = max(1, math.ceil(total_items / page_size)) if total_items else 1
-    current_page = min(page, total_pages)
-    start_index = (current_page - 1) * page_size
-    end_index = start_index + page_size
-    page_df = filtered_df.iloc[start_index:end_index].copy()
-
     available_diet_types = []
+
     if diet_column:
         available_diet_types = sorted(
             {
@@ -304,11 +326,58 @@ def build_recipe_payload(
         )
 
     return {
-        "items": build_recipe_items(page_df, start_number=start_index + 1),
+        "items": build_recipe_items(df),
+        "filters": {
+            "availableDietTypes": available_diet_types,
+            "searchableColumns": searchable_columns,
+        },
+        "meta": {
+            **pipeline_meta,
+            "recordCount": len(df),
+        },
+    }
+
+
+def build_recipe_payload_from_cache(recipe_cache: dict, keyword: str, diet_type: str, page: int, page_size: int):
+    items = recipe_cache.get("items", [])
+    filters = recipe_cache.get("filters", {})
+    searchable_columns = filters.get("searchableColumns", [])
+    normalized_keyword = keyword.casefold()
+    normalized_diet_type = diet_type.casefold()
+
+    filtered_items = items
+
+    if diet_type and normalized_diet_type != "all":
+        filtered_items = [
+            item
+            for item in filtered_items
+            if str(item.get("dietType", "")).casefold() == normalized_diet_type
+        ]
+
+    if keyword:
+        def matches(item):
+            fields = item.get("fields", {})
+            for column in searchable_columns:
+                value = fields.get(column)
+                if value and normalized_keyword in str(value).casefold():
+                    return True
+            return False
+
+        filtered_items = [item for item in filtered_items if matches(item)]
+
+    total_items = len(filtered_items)
+    total_pages = max(1, math.ceil(total_items / page_size)) if total_items else 1
+    current_page = min(page, total_pages)
+    start_index = (current_page - 1) * page_size
+    end_index = start_index + page_size
+    page_items = filtered_items[start_index:end_index]
+
+    return {
+        "items": page_items,
         "filters": {
             "dietType": diet_type or "all",
             "keyword": keyword,
-            "availableDietTypes": available_diet_types,
+            "availableDietTypes": filters.get("availableDietTypes", []),
             "searchableColumns": searchable_columns,
         },
         "pagination": {
@@ -318,22 +387,155 @@ def build_recipe_payload(
             "totalPages": total_pages,
             "hasPreviousPage": current_page > 1,
             "hasNextPage": current_page < total_pages,
-            "returnedCount": len(page_df),
+            "returnedCount": len(page_items),
         },
         "meta": {
-            "sourceBlob": source_blob,
-            "returnedCount": len(page_df),
+            **recipe_cache.get("meta", {}),
+            "returnedCount": len(page_items),
         },
     }
 
 
-@app.route(route="getDietData", methods=["GET"])
-def get_diet_data(req: func.HttpRequest) -> func.HttpResponse:
-    start_time = time.time()
+def upload_text_blob(container_client, blob_name: str, content: str, content_type: str):
+    blob_client = container_client.get_blob_client(blob_name)
+    blob_client.upload_blob(
+        content,
+        overwrite=True,
+        content_settings=ContentSettings(content_type=content_type),
+    )
+
+
+def upload_json_blob(container_client, blob_name: str, payload: dict):
+    upload_text_blob(container_client, blob_name, json.dumps(payload), "application/json")
+
+
+def read_json_blob(container_client, blob_name: str) -> dict:
+    blob_client = container_client.get_blob_client(blob_name)
+    blob_data = blob_client.download_blob().readall().decode("utf-8")
+    return json.loads(blob_data)
+
+
+def build_pipeline_status(
+    pipeline_meta: dict,
+    cleaned_blob: str,
+    insights_cache_blob: str,
+    recipes_cache_blob: str,
+):
+    return {
+        **pipeline_meta,
+        "cleanedDataBlob": cleaned_blob,
+        "insightsCacheBlob": insights_cache_blob,
+        "recipesCacheBlob": recipes_cache_blob,
+    }
+
+
+def refresh_pipeline_from_source(trigger_reason: str):
+    pipeline_start = time.time()
+    pipeline_started_at = utc_now_string()
+    container_client = get_container_client()
+    df, source_blob, properties = load_source_dataframe(container_client)
+    cleaned_blob = get_cleaned_blob_name()
+    insights_cache_blob = get_insights_cache_blob_name()
+    recipes_cache_blob = get_recipes_cache_blob_name()
+
+    pipeline_meta = build_pipeline_meta(
+        source_blob=source_blob,
+        source_etag=properties.etag,
+        source_last_modified=properties.last_modified,
+        pipeline_started_at=pipeline_started_at,
+        pipeline_duration_ms=0,
+        trigger_reason=trigger_reason,
+    )
+
+    upload_text_blob(container_client, cleaned_blob, df.to_csv(index=False), "text/csv")
+    pipeline_meta["pipelineDurationMs"] = round((time.time() - pipeline_start) * 1000, 2)
+    insights_payload = build_insights_payload(df, pipeline_meta)
+    recipes_payload = build_recipe_cache(df, pipeline_meta)
+
+    upload_json_blob(container_client, insights_cache_blob, insights_payload)
+    upload_json_blob(container_client, recipes_cache_blob, recipes_payload)
+
+    status_payload = build_pipeline_status(
+        pipeline_meta=pipeline_meta,
+        cleaned_blob=cleaned_blob,
+        insights_cache_blob=insights_cache_blob,
+        recipes_cache_blob=recipes_cache_blob,
+    )
+    upload_json_blob(container_client, get_pipeline_status_blob_name(), status_payload)
+    return status_payload
+
+
+def ensure_cached_pipeline():
+    container_client = get_container_client()
+    _, source_blob, properties = load_source_dataframe(container_client)
 
     try:
-        df, source_blob = load_dataset()
-        return json_response(build_insights_payload(df, source_blob, start_time))
+        status = read_json_blob(container_client, get_pipeline_status_blob_name())
+        expected_etag = status.get("sourceEtag")
+        cache_blobs = [
+            status.get("insightsCacheBlob") or get_insights_cache_blob_name(),
+            status.get("recipesCacheBlob") or get_recipes_cache_blob_name(),
+            status.get("cleanedDataBlob") or get_cleaned_blob_name(),
+        ]
+
+        for blob_name in cache_blobs:
+            container_client.get_blob_client(blob_name).get_blob_properties()
+
+        if expected_etag == properties.etag and status.get("sourceBlob") == source_blob:
+            return status
+    except ResourceNotFoundError:
+        logging.info("Cache missing; rebuilding pipeline artifacts.")
+    except Exception as exc:
+        logging.warning("Failed to validate cache status: %s", str(exc))
+
+    return refresh_pipeline_from_source("source-changed-or-cache-missing")
+
+
+def load_cached_insights():
+    container_client = get_container_client()
+    return read_json_blob(container_client, get_insights_cache_blob_name())
+
+
+def load_cached_recipes():
+    container_client = get_container_client()
+    return read_json_blob(container_client, get_recipes_cache_blob_name())
+
+
+def attach_request_meta(payload: dict, request_started_at: float, cache_status: str):
+    meta = dict(payload.get("meta", {}))
+    meta["requestTimestamp"] = utc_now_string()
+    meta["requestExecutionTimeMs"] = round((time.time() - request_started_at) * 1000, 2)
+    meta["requestServedFromCache"] = True
+    meta["cacheStatus"] = cache_status
+    payload["meta"] = meta
+    return payload
+
+
+@app.blob_trigger(
+    arg_name="source_blob_stream",
+    path="%DATASET_CONTAINER_NAME%/%SOURCE_BLOB_NAME%",
+    connection="AZURE_STORAGE_CONNECTION_STRING",
+)
+def process_updated_dataset(source_blob_stream: func.InputStream):
+    blob_name = getattr(source_blob_stream, "name", get_setting("SOURCE_BLOB_NAME", DEFAULT_SOURCE_BLOB))
+    logging.info("Blob trigger received update for %s", blob_name)
+
+    try:
+        refresh_pipeline_from_source("blob-trigger")
+        logging.info("Pipeline refresh completed for %s", blob_name)
+    except Exception as exc:
+        logging.exception("Pipeline refresh failed for %s: %s", blob_name, str(exc))
+        raise
+
+
+@app.route(route="getDietData", methods=["GET"])
+def get_diet_data(req: func.HttpRequest) -> func.HttpResponse:
+    request_start = time.time()
+
+    try:
+        ensure_cached_pipeline()
+        payload = load_cached_insights()
+        return json_response(attach_request_meta(payload, request_start, "hit"))
     except Exception as exc:
         logging.error(str(exc))
         return json_response({"error": str(exc)}, status_code=500)
@@ -341,16 +543,29 @@ def get_diet_data(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="browseRecipes", methods=["GET"])
 def browse_recipes(req: func.HttpRequest) -> func.HttpResponse:
+    request_start = time.time()
+
     try:
-        df, source_blob = load_dataset()
+        ensure_cached_pipeline()
+        recipe_cache = load_cached_recipes()
 
         keyword = (req.params.get("keyword") or "").strip()
         diet_type = (req.params.get("dietType") or "all").strip()
         page = parse_positive_int(req.params.get("page"), default=1)
         page_size = parse_positive_int(req.params.get("pageSize"), default=10, maximum=MAX_PAGE_SIZE)
 
-        payload = build_recipe_payload(df, source_blob, keyword, diet_type, page, page_size)
-        return json_response(payload)
+        payload = build_recipe_payload_from_cache(recipe_cache, keyword, diet_type, page, page_size)
+        return json_response(attach_request_meta(payload, request_start, "hit"))
+    except Exception as exc:
+        logging.error(str(exc))
+        return json_response({"error": str(exc)}, status_code=500)
+
+
+@app.route(route="cacheStatus", methods=["GET"])
+def cache_status(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        status = ensure_cached_pipeline()
+        return json_response(status)
     except Exception as exc:
         logging.error(str(exc))
         return json_response({"error": str(exc)}, status_code=500)
