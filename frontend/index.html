@@ -1,65 +1,157 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nutritional Insights</title>
-    <!-- Tailwind CSS CDN -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.0.0/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body class="bg-gray-100">
-
-    <header class="bg-blue-600 p-4 text-white">
-        <h1 class="text-3xl font-semibold">Nutritional Insights</h1>
+<body class="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-yellow-50 text-gray-900">
+    <header class="bg-gray-900 text-white shadow-lg">
+        <div class="container mx-auto flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between">
+            <div>
+                <p class="text-xs uppercase tracking-widest text-green-300">Cloud Nutrition Dashboard</p>
+                <h1 class="text-3xl font-semibold">Nutritional Insights</h1>
+            </div>
+            <div id="userBar" class="hidden items-center gap-3 rounded-full bg-white/10 px-4 py-2">
+                <div>
+                    <p class="text-xs uppercase tracking-wide text-gray-300">Signed in as</p>
+                    <p id="userName" class="font-semibold"></p>
+                </div>
+                <button id="logoutBtn" class="rounded-full bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600">
+                    Logout
+                </button>
+            </div>
+        </div>
     </header>
 
-    <main class="container mx-auto p-6">
-        <section class="mb-8">
-            <h2 class="text-2xl font-semibold mb-4">Explore Nutritional Insights</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="bg-white p-4 shadow-lg rounded-lg">
-                    <h3 class="font-semibold">Bar Chart</h3>
-                    <p class="text-sm text-gray-600">Average macronutrient content by diet type.</p>
-                    <canvas id="barChart" class="w-full h-48"></canvas>
+    <main class="container mx-auto px-6 py-8">
+        <section id="authSection" class="mx-auto max-w-5xl">
+            <div class="grid gap-6 lg:grid-cols-2">
+                <div class="rounded-3xl bg-white p-8 shadow-xl">
+                    <p class="mb-2 text-sm font-semibold uppercase tracking-widest text-green-600">Secure Access</p>
+                    <h2 class="mb-3 text-3xl font-bold">Sign in to view the dashboard</h2>
+                    <p class="mb-6 text-gray-600">
+                        Person 3 requirements are handled here: email/password accounts, GitHub OAuth, hashed passwords, stored profiles, and a protected dashboard.
+                    </p>
+
+                    <div class="mb-6 flex rounded-full bg-gray-100 p-1">
+                        <button id="showLogin" class="flex-1 rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white">Login</button>
+                        <button id="showRegister" class="flex-1 rounded-full px-4 py-2 text-sm font-semibold text-gray-700">Register</button>
+                    </div>
+
+                    <form id="loginForm" class="space-y-4">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium" for="loginEmail">Email</label>
+                            <input id="loginEmail" name="email" type="email" required class="w-full rounded-xl border border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium" for="loginPassword">Password</label>
+                            <input id="loginPassword" name="password" type="password" required class="w-full rounded-xl border border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <button type="submit" class="w-full rounded-xl bg-gray-900 px-4 py-3 font-semibold text-white transition hover:bg-gray-800">
+                            Login with Email
+                        </button>
+                    </form>
+
+                    <form id="registerForm" class="hidden space-y-4">
+                        <div>
+                            <label class="mb-1 block text-sm font-medium" for="registerName">Display Name</label>
+                            <input id="registerName" name="displayName" type="text" required class="w-full rounded-xl border border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium" for="registerEmail">Email</label>
+                            <input id="registerEmail" name="email" type="email" required class="w-full rounded-xl border border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-sm font-medium" for="registerPassword">Password</label>
+                            <input id="registerPassword" name="password" type="password" minlength="8" required class="w-full rounded-xl border border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none">
+                        </div>
+                        <button type="submit" class="w-full rounded-xl bg-green-600 px-4 py-3 font-semibold text-white transition hover:bg-green-700">
+                            Create Account
+                        </button>
+                    </form>
+
+                    <div class="my-6 flex items-center gap-3 text-sm text-gray-500">
+                        <div class="h-px flex-1 bg-gray-200"></div>
+                        <span>or continue with OAuth</span>
+                        <div class="h-px flex-1 bg-gray-200"></div>
+                    </div>
+
+                    <button id="githubLoginBtn" class="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-900 transition hover:border-gray-400 hover:bg-gray-50">
+                        Continue with GitHub
+                    </button>
+
+                    <div id="authMessage" class="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                        Sign in to unlock the analytics dashboard.
+                    </div>
                 </div>
 
-                <div class="bg-white p-4 shadow-lg rounded-lg">
-                    <h3 class="font-semibold">Scatter Plot</h3>
-                    <p class="text-sm text-gray-600">Nutrient relationships (e.g., protein vs carbs).</p>
-                    <canvas id="scatterPlot" class="w-full h-48"></canvas>
-                </div>
-
-                <div class="bg-white p-4 shadow-lg rounded-lg">
-                    <h3 class="font-semibold">Heatmap</h3>
-                    <p class="text-sm text-gray-600">Nutrient correlations.</p>
-                    <div id="heatmap" class="w-full h-48"></div>
-                </div>
-
-                <div class="bg-white p-4 shadow-lg rounded-lg">
-                    <h3 class="font-semibold">Pie Chart</h3>
-                    <p class="text-sm text-gray-600">Recipe distribution by diet type.</p>
-                    <canvas id="pieChart" class="w-full h-48"></canvas>
+                <div class="rounded-3xl bg-gray-900 p-8 text-white shadow-xl">
+                    <p class="mb-2 text-sm font-semibold uppercase tracking-widest text-yellow-300">Security Checklist</p>
+                    <h2 class="mb-4 text-3xl font-bold">What this role adds</h2>
+                    <ul class="space-y-3 text-sm text-gray-200">
+                        <li>Email/password registration and login endpoints</li>
+                        <li>GitHub OAuth sign-in flow</li>
+                        <li>User profile records stored in a cloud-backed table</li>
+                        <li>Password hashing with PBKDF2 instead of plain text storage</li>
+                        <li>Dashboard access limited to authenticated users</li>
+                        <li>Visible signed-in user identity and logout action</li>
+                    </ul>
                 </div>
             </div>
         </section>
 
-        <section class="mb-8">
-            <h2 class="text-2xl font-semibold mb-4">API Data Interaction</h2>
-            <div class="flex flex-wrap gap-4">
-                <button id="refreshData" class="bg-blue-600 text-white py-2 px-4 rounded">Get Nutritional Insights</button>
-            </div>
-        </section>
+        <section id="dashboardSection" class="hidden">
+            <section class="mb-8">
+                <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                        <p class="text-sm font-semibold uppercase tracking-widest text-green-700">Protected Content</p>
+                        <h2 class="text-2xl font-semibold">Explore Nutritional Insights</h2>
+                    </div>
+                    <button id="refreshData" class="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow hover:bg-blue-700">
+                        Refresh Dashboard Data
+                    </button>
+                </div>
 
-        <section class="mb-8">
-            <h2 class="text-2xl font-semibold mb-2">Run Metadata</h2>
-            <div id="meta" class="text-sm text-gray-700 bg-white p-3 rounded shadow">
-                <p><span class="font-semibold">Status:</span> Waiting for data…</p>
-            </div>
-        </section>
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+                    <div class="rounded-2xl bg-white p-4 shadow-lg">
+                        <h3 class="font-semibold">Bar Chart</h3>
+                        <p class="text-sm text-gray-600">Average protein by diet type.</p>
+                        <canvas id="barChart" class="mt-3 h-48 w-full"></canvas>
+                    </div>
 
+                    <div class="rounded-2xl bg-white p-4 shadow-lg">
+                        <h3 class="font-semibold">Scatter Plot</h3>
+                        <p class="text-sm text-gray-600">Protein compared to carbohydrates.</p>
+                        <canvas id="scatterPlot" class="mt-3 h-48 w-full"></canvas>
+                    </div>
+
+                    <div class="rounded-2xl bg-white p-4 shadow-lg">
+                        <h3 class="font-semibold">Heatmap</h3>
+                        <p class="text-sm text-gray-600">Correlation matrix for nutrients.</p>
+                        <div id="heatmap" class="mt-3 h-48 w-full"></div>
+                    </div>
+
+                    <div class="rounded-2xl bg-white p-4 shadow-lg">
+                        <h3 class="font-semibold">Pie Chart</h3>
+                        <p class="text-sm text-gray-600">Average carbohydrates by diet type.</p>
+                        <canvas id="pieChart" class="mt-3 h-48 w-full"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section class="mb-8">
+                <h2 class="mb-2 text-2xl font-semibold">Run Metadata</h2>
+                <div id="meta" class="rounded-2xl bg-white p-4 text-sm text-gray-700 shadow">
+                    <p><span class="font-semibold">Status:</span> Waiting for data...</p>
+                </div>
+            </section>
+        </section>
     </main>
+
+    <div id="status" class="hidden"></div>
 
     <script src="script.js"></script>
 </body>
