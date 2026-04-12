@@ -11,6 +11,8 @@ let lastRecipePayload = null;
 let barChart;
 let pieChart;
 let scatterChart;
+let chartsInitialized = false;
+const PREFERS_REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const recipeState = {
   keyword: "",
@@ -47,8 +49,18 @@ const elements = {
   recipeSummary: document.getElementById("recipeSummary"),
   recipeMeta: document.getElementById("recipeMeta"),
   recipeResults: document.getElementById("recipeResults"),
-  paginationControls: document.getElementById("paginationControls")
+  paginationControls: document.getElementById("paginationControls"),
+  showAllRecipesBtn: document.getElementById("showAllRecipesBtn"),
+  refreshRecipesBtn: document.getElementById("refreshRecipesBtn"),
+  recipeExplorerSection: document.getElementById("recipeExplorerSection"),
+  showChartsBtn: document.getElementById("showChartsBtn"),
+  renderChartsBtn: document.getElementById("renderChartsBtn"),
+  chartsSection: document.getElementById("chartsSection"),
+  chartsPlaceholder: document.getElementById("chartsPlaceholder"),
+  chartsGrid: document.getElementById("chartsGrid")
 };
+
+const quickFilterButtons = Array.from(document.querySelectorAll("[data-quick-filter]"));
 
 if (elements.apiEndpointLabel) {
   elements.apiEndpointLabel.textContent = `${API_BASE_URL}${RECIPES_API_PATH}`;
@@ -379,6 +391,8 @@ function buildOrUpdateBar(labels, protein) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      normalized: true,
       plugins: {
         title: { display: true, text: "Average Protein by Diet Type" },
         legend: { display: true }
@@ -416,6 +430,8 @@ function buildOrUpdatePie(labels, values) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      normalized: true,
       plugins: {
         title: { display: true, text: "Recipe Distribution by Diet Type" }
       }
@@ -452,6 +468,8 @@ function buildOrUpdateScatter(carbs, protein, labels) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      normalized: true,
       plugins: {
         title: { display: true, text: "Protein vs Carbohydrates" },
         tooltip: {
@@ -545,12 +563,15 @@ function buildOrUpdateHeatmap(matrix, labels) {
 }
 
 function renderAllFrom(data) {
-  buildOrUpdateBar(data.diets, data.protein);
-  buildOrUpdatePie(data.diets, data.dietCounts);
-  buildOrUpdateScatter(data.carbs, data.protein, data.diets);
-  buildOrUpdateHeatmap(data.correlations, data.metricLabels);
   renderSummaryCards(data.metrics, data.meta);
   renderMeta(data.meta);
+
+  if (chartsInitialized) {
+    buildOrUpdateBar(data.diets, data.protein);
+    buildOrUpdatePie(data.diets, data.dietCounts);
+    buildOrUpdateScatter(data.carbs, data.protein, data.diets);
+    buildOrUpdateHeatmap(data.correlations, data.metricLabels);
+  }
 }
 
 function buildBrowseUrl() {
@@ -590,6 +611,20 @@ function populateDietFilter(options, selectedValue) {
     .join("");
 }
 
+function updateQuickFilterButtons(activeDietType) {
+  quickFilterButtons.forEach(button => {
+    const isActive = (button.dataset.quickFilter || "all") === (activeDietType || "all");
+    button.classList.toggle("active", isActive);
+  });
+}
+
+function scrollToRecipeExplorer() {
+  elements.recipeExplorerSection?.scrollIntoView({
+    behavior: PREFERS_REDUCED_MOTION ? "auto" : "smooth",
+    block: "start"
+  });
+}
+
 function renderRecipeCards(items) {
   if (!elements.recipeResults) return;
 
@@ -606,7 +641,7 @@ function renderRecipeCards(items) {
     const nutrientEntries = Object.entries(item.nutrients || {});
     const fieldEntries = Object.entries(item.fields || {}).filter(([key]) => {
       return !["Recipe_name", "Recipe Name", "Diet_type", "Diet Type", "Protein(g)", "Carbs(g)", "Fat(g)"].includes(key);
-    }).slice(0, 4);
+    }).slice(0, 2);
 
     const nutrientMarkup = nutrientEntries.length
       ? `
@@ -706,6 +741,7 @@ function renderPaginationControls(pagination) {
 
 function renderRecipePayload(payload) {
   populateDietFilter(payload.filters.availableDietTypes, payload.filters.dietType);
+  updateQuickFilterButtons(payload.filters.dietType || "all");
   renderRecipeCards(payload.items);
   renderPaginationControls(payload.pagination);
 
@@ -780,6 +816,7 @@ function applyRecipeFilters(resetPage = true) {
   if (resetPage) {
     recipeState.page = 1;
   }
+  updateQuickFilterButtons(recipeState.dietType);
   fetchRecipes();
 }
 
@@ -793,7 +830,53 @@ function clearRecipeFilters() {
   if (elements.dietTypeFilter) elements.dietTypeFilter.value = "all";
   if (elements.pageSizeSelect) elements.pageSizeSelect.value = "10";
 
+  updateQuickFilterButtons("all");
   fetchRecipes();
+}
+
+function applyQuickDietFilter(dietType) {
+  recipeState.dietType = dietType || "all";
+  recipeState.keyword = "";
+  recipeState.page = 1;
+
+  if (elements.keywordSearch) elements.keywordSearch.value = "";
+  if (elements.dietTypeFilter) elements.dietTypeFilter.value = recipeState.dietType;
+
+  updateQuickFilterButtons(recipeState.dietType);
+  scrollToRecipeExplorer();
+  fetchRecipes();
+}
+
+function showAllRecipes() {
+  clearRecipeFilters();
+  scrollToRecipeExplorer();
+}
+
+function renderChartsOnDemand() {
+  if (chartsInitialized) {
+    elements.chartsSection?.scrollIntoView({
+      behavior: PREFERS_REDUCED_MOTION ? "auto" : "smooth",
+      block: "start"
+    });
+    return;
+  }
+
+  chartsInitialized = true;
+  elements.chartsPlaceholder?.classList.add("hidden");
+  elements.chartsGrid?.classList.remove("hidden");
+  elements.renderChartsBtn?.classList.add("hidden");
+
+  if (lastDataset) {
+    buildOrUpdateBar(lastDataset.diets, lastDataset.protein);
+    buildOrUpdatePie(lastDataset.diets, lastDataset.dietCounts);
+    buildOrUpdateScatter(lastDataset.carbs, lastDataset.protein, lastDataset.diets);
+    buildOrUpdateHeatmap(lastDataset.correlations, lastDataset.metricLabels);
+  }
+
+  elements.chartsSection?.scrollIntoView({
+    behavior: PREFERS_REDUCED_MOTION ? "auto" : "smooth",
+    block: "start"
+  });
 }
 
 function showLoginForm() {
@@ -864,8 +947,20 @@ elements.refreshData?.addEventListener("click", fetchInsights);
 elements.githubLoginBtn?.addEventListener("click", startGithubLogin);
 elements.searchRecipes?.addEventListener("click", () => applyRecipeFilters(true));
 elements.clearFilters?.addEventListener("click", clearRecipeFilters);
+elements.showAllRecipesBtn?.addEventListener("click", showAllRecipes);
+elements.refreshRecipesBtn?.addEventListener("click", () => {
+  scrollToRecipeExplorer();
+  fetchRecipes();
+});
+elements.showChartsBtn?.addEventListener("click", renderChartsOnDemand);
+elements.renderChartsBtn?.addEventListener("click", renderChartsOnDemand);
 elements.pageSizeSelect?.addEventListener("change", () => applyRecipeFilters(true));
 elements.dietTypeFilter?.addEventListener("change", () => applyRecipeFilters(true));
+quickFilterButtons.forEach(button => {
+  button.addEventListener("click", () => {
+    applyQuickDietFilter(button.dataset.quickFilter || "all");
+  });
+});
 elements.keywordSearch?.addEventListener("keydown", event => {
   if (event.key === "Enter") {
     event.preventDefault();

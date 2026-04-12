@@ -23,8 +23,59 @@
 
         .glass-panel {
             background: var(--panel-bg);
-            backdrop-filter: blur(12px);
             border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+        }
+
+        .chart-card {
+            overflow: hidden;
+        }
+
+        .chart-frame {
+            position: relative;
+            height: 16rem;
+            margin-top: 0.75rem;
+        }
+
+        .chart-frame canvas,
+        .chart-frame > div {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .action-chip {
+            border: 1px solid rgba(59, 130, 246, 0.18);
+            background: rgba(255, 255, 255, 0.9);
+            color: #1d4ed8;
+            transition: all 0.2s ease;
+        }
+
+        .action-chip:hover {
+            background: #eff6ff;
+            border-color: rgba(59, 130, 246, 0.32);
+        }
+
+        .action-chip.active {
+            background: #1d4ed8;
+            color: white;
+            border-color: #1d4ed8;
+            box-shadow: 0 10px 25px rgba(29, 78, 216, 0.18);
+        }
+
+        @supports (backdrop-filter: blur(6px)) {
+            .glass-panel {
+                backdrop-filter: blur(6px);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce), (max-width: 900px) {
+            .glass-panel {
+                backdrop-filter: none;
+            }
+
+            html {
+                scroll-behavior: auto;
+            }
         }
     </style>
 </head>
@@ -151,7 +202,7 @@
                 </article>
             </section>
 
-            <section class="mb-10">
+            <section id="recipeExplorerSection" class="mb-10">
                 <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
                     <div>
                         <p class="text-sm font-semibold uppercase tracking-widest text-green-700">Protected Content</p>
@@ -171,6 +222,44 @@
                 </div>
 
                 <div class="glass-panel rounded-3xl shadow-xl p-6">
+                    <div class="rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-cyan-600 p-5 text-white shadow-lg">
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-[0.25em] text-blue-100">Recipe Actions</p>
+                                <h3 class="mt-2 text-2xl font-semibold">Start here to browse the dataset</h3>
+                                <p class="mt-2 max-w-3xl text-sm text-blue-100">
+                                    Use the quick buttons to load all recipes, jump to a popular diet type, or refresh the list after changing filters.
+                                </p>
+                            </div>
+                            <div class="flex flex-wrap gap-3">
+                                <button id="showAllRecipesBtn" class="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-blue-700 shadow hover:bg-blue-50">
+                                    Show All Recipes
+                                </button>
+                                <button id="refreshRecipesBtn" class="rounded-xl bg-blue-900/40 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/25 hover:bg-blue-900/55">
+                                    Refresh Recipes
+                                </button>
+                                <button id="showChartsBtn" class="rounded-xl bg-blue-900/20 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/25 hover:bg-blue-900/35">
+                                    Load Charts
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button type="button" class="action-chip active rounded-full px-4 py-2 text-sm font-semibold" data-quick-filter="all">
+                                All Diets
+                            </button>
+                            <button type="button" class="action-chip rounded-full px-4 py-2 text-sm font-semibold" data-quick-filter="vegan">
+                                Vegan
+                            </button>
+                            <button type="button" class="action-chip rounded-full px-4 py-2 text-sm font-semibold" data-quick-filter="keto">
+                                Keto
+                            </button>
+                            <button type="button" class="action-chip rounded-full px-4 py-2 text-sm font-semibold" data-quick-filter="mediterranean">
+                                Mediterranean
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
                         <label class="block">
                             <span class="text-sm font-semibold text-gray-700">Keyword Search</span>
@@ -233,31 +322,52 @@
                 </div>
             </section>
 
-            <section class="mb-8">
-                <h2 class="text-2xl font-semibold mb-4">Nutrition Visualizations</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <div class="glass-panel p-4 shadow-lg rounded-2xl">
+            <section id="chartsSection" class="mb-8">
+                <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                        <h2 class="text-2xl font-semibold">Nutrition Visualizations</h2>
+                        <p class="text-sm text-gray-600 mt-1">Charts are loaded on demand to keep the page responsive.</p>
+                    </div>
+                    <button id="renderChartsBtn" class="rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow hover:bg-blue-700">
+                        Show Charts
+                    </button>
+                </div>
+
+                <div id="chartsPlaceholder" class="glass-panel rounded-2xl p-6 text-sm text-gray-600 shadow">
+                    Charts are paused until you click <span class="font-semibold">Show Charts</span>.
+                </div>
+
+                <div id="chartsGrid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="glass-panel chart-card p-4 shadow-lg rounded-2xl">
                         <h3 class="font-semibold">Bar Chart</h3>
                         <p class="text-sm text-gray-600">Average protein content by diet type.</p>
-                        <canvas id="barChart" class="w-full h-48 mt-3"></canvas>
+                        <div class="chart-frame">
+                            <canvas id="barChart"></canvas>
+                        </div>
                     </div>
 
-                    <div class="glass-panel p-4 shadow-lg rounded-2xl">
+                    <div class="glass-panel chart-card p-4 shadow-lg rounded-2xl">
                         <h3 class="font-semibold">Scatter Plot</h3>
                         <p class="text-sm text-gray-600">Relationship between protein and carbohydrates.</p>
-                        <canvas id="scatterPlot" class="w-full h-48 mt-3"></canvas>
+                        <div class="chart-frame">
+                            <canvas id="scatterPlot"></canvas>
+                        </div>
                     </div>
 
-                    <div class="glass-panel p-4 shadow-lg rounded-2xl">
+                    <div class="glass-panel chart-card p-4 shadow-lg rounded-2xl">
                         <h3 class="font-semibold">Heatmap</h3>
                         <p class="text-sm text-gray-600">Nutrient correlations returned by the backend.</p>
-                        <div id="heatmap" class="w-full h-48 mt-3"></div>
+                        <div class="chart-frame">
+                            <div id="heatmap"></div>
+                        </div>
                     </div>
 
-                    <div class="glass-panel p-4 shadow-lg rounded-2xl">
+                    <div class="glass-panel chart-card p-4 shadow-lg rounded-2xl">
                         <h3 class="font-semibold">Pie Chart</h3>
                         <p class="text-sm text-gray-600">Recipe distribution by diet type.</p>
-                        <canvas id="pieChart" class="w-full h-48 mt-3"></canvas>
+                        <div class="chart-frame">
+                            <canvas id="pieChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </section>
