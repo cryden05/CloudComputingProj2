@@ -1,7 +1,7 @@
  # CloudComputingProj2
 
 ## Overview
-This project is a cloud-based nutritional insights dashboard built for Phase 2 of the Cloud Dashboard Development lab. The solution uses an Azure Function App to read a diet dataset from Azure Blob Storage, compute analytics, and return structured JSON to a frontend dashboard that visualizes the results.
+This project is a cloud-based nutritional insights dashboard built for the Cloud Dashboard Development lab. The solution uses an Azure Function App to read a diet dataset from Azure Blob Storage, compute analytics, and return structured JSON to a frontend dashboard that visualizes the results. The current version also includes authenticated access so only signed-in users can reach the dashboard.
 
 ## Project Objective
 The goal of Phase 2 is to move the Phase 1 local solution into Azure and demonstrate a cloud-native workflow using:
@@ -56,6 +56,13 @@ Backend files are located in `backend/`.
 ### Required environment variables
 - `AZURE_STORAGE_CONNECTION_STRING`
 - `DATASET_CONTAINER_NAME` (optional, defaults to `datasets`)
+- `USERS_TABLE_NAME` (optional, defaults to `userprofiles`)
+- `SESSION_SECRET` (required for production; used to sign login sessions)
+- `SESSION_TTL_SECONDS` (optional, defaults to `86400`)
+- `FRONTEND_URL` (frontend origin used after GitHub OAuth sign-in)
+- `GITHUB_CLIENT_ID` (required for GitHub OAuth)
+- `GITHUB_CLIENT_SECRET` (required for GitHub OAuth)
+- `GITHUB_REDIRECT_URI` (optional; callback URL for GitHub OAuth)
 - `SOURCE_BLOB_NAME` (optional, defaults to `All_Diets.csv`)
 - `CLEANED_BLOB_NAME` (optional, defaults to `All_Diets_cleaned.csv`)
 - `INSIGHTS_CACHE_BLOB_NAME` (optional, defaults to `cache/diet_insights.json`)
@@ -70,11 +77,15 @@ Frontend files are located in `frontend/`.
 - `script.js`: API integration and chart rendering
 
 ### Frontend responsibilities
-- Call the deployed Azure Function endpoint
+- Show register/login forms before the dashboard is visible
+- Support GitHub OAuth sign-in
+- Persist the signed-in session token in the browser
+- Call the deployed Azure Function endpoint with authentication
 - Render live dashboard data
 - Display multiple visualizations
 - Show execution metadata such as timestamp and execution time
 - Allow the user to refresh the dashboard data
+- Show the logged-in user's name and provide logout
 
 ## Visualizations Included
 The dashboard includes at least three required visualizations:
@@ -117,6 +128,7 @@ Replace the placeholders below with your actual deployed links before submission
 - Python
 - Azure Functions
 - Azure Blob Storage
+- Azure Table Storage
 - pandas
 
 ## Setup Notes
@@ -127,6 +139,13 @@ Install dependencies from `backend/requirements.txt` and configure Azure Functio
 Make sure the `API_URL` in `frontend/script.js` points to the deployed Azure Function endpoint.
 
 ## Testing Checklist
+- Users can register with email and password
+- Passwords are stored as hashes, not plain text
+- Users can sign in with GitHub OAuth
+- User profiles are stored in table storage
+- Unauthenticated requests to the dashboard API are rejected
+- The frontend hides the dashboard until login succeeds
+- The logged-in user name is displayed with a logout button
 - Azure Function endpoint returns JSON successfully
 - Dataset is read from Azure Blob Storage
 - Blob trigger runs when the source CSV changes
