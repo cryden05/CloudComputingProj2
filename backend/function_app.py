@@ -271,6 +271,10 @@ def get_github_redirect_uri(req: func.HttpRequest) -> str:
     if configured:
         return configured
 
+    frontend_url = (os.environ.get("FRONTEND_URL") or "").strip().rstrip("/")
+    if frontend_url and not frontend_url.startswith("http://localhost") and not frontend_url.startswith("http://127.0.0.1"):
+        return f"{frontend_url}/api/auth/github/callback"
+
     forwarded_proto = req.headers.get("x-forwarded-proto", "http")
     host = req.headers.get("x-forwarded-host") or req.headers.get("host", "localhost:7071")
     return f"{forwarded_proto}://{host}/api/auth/github/callback"
