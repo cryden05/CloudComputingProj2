@@ -199,6 +199,20 @@ function saveToken(token) {
   }
 }
 
+function saveOAuthState(state) {
+  if (state) {
+    localStorage.setItem(OAUTH_STATE_KEY, state);
+    sessionStorage.setItem(OAUTH_STATE_KEY, state);
+  } else {
+    localStorage.removeItem(OAUTH_STATE_KEY);
+    sessionStorage.removeItem(OAUTH_STATE_KEY);
+  }
+}
+
+function loadOAuthState() {
+  return sessionStorage.getItem(OAUTH_STATE_KEY) || localStorage.getItem(OAUTH_STATE_KEY);
+}
+
 function setAuthenticatedView(user) {
   currentUser = user || null;
 
@@ -907,7 +921,7 @@ async function logout() {
 async function startGithubLogin() {
   try {
     const payload = await apiFetch("/auth/github/start");
-    sessionStorage.setItem(OAUTH_STATE_KEY, payload.state);
+    saveOAuthState(payload.state);
     window.location.href = payload.authUrl;
   } catch (error) {
     setAuthMessage(error.message, "error");
@@ -921,9 +935,10 @@ function captureOAuthTokenFromUrl() {
   const returnedState = url.searchParams.get("state");
   if (!token) return false;
 
-  const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+  const expectedState = loadOAuthState();
   if (!expectedState || returnedState !== expectedState) {
     saveToken("");
+    saveOAuthState("");
     setAuthMessage("OAuth verification failed. Please try GitHub login again.", "error");
     url.searchParams.delete("token");
     url.searchParams.delete("state");
@@ -932,7 +947,7 @@ function captureOAuthTokenFromUrl() {
   }
 
   saveToken(token);
-  sessionStorage.removeItem(OAUTH_STATE_KEY);
+  saveOAuthState("");
   url.searchParams.delete("token");
   url.searchParams.delete("state");
   window.history.replaceState({}, "", url.toString());
