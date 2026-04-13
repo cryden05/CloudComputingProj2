@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:7071/api";
+const API_BASE_URL = localStorage.getItem("apiBaseUrl") || `${window.location.origin}/api`;
 const TOKEN_KEY = "nutrition_dashboard_token";
 const OAUTH_STATE_KEY = "nutrition_dashboard_oauth_state";
 const INSIGHTS_API_PATH = "/getDietData";

@@ -136,7 +136,7 @@ Replace the placeholders below with your actual deployed links before submission
 Install dependencies from `backend/requirements.txt` and configure Azure Function settings with the correct storage connection string.
 
 ### Frontend
-Make sure the `API_URL` in `frontend/script.js` points to the deployed Azure Function endpoint.
+The deployed Static Web App uses same-origin `/api` automatically. For local development, open `frontend/local.html` first so it stores the local Functions URL override before redirecting to `index.html`.
 
 ## Testing Checklist
 - Users can register with email and password
