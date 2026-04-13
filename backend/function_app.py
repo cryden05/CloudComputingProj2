@@ -168,6 +168,14 @@ def encode_token(payload: dict) -> str:
     return f"{body}.{signature_text}"
 
 
+def token_debug_summary(token: str | None) -> str:
+    if not token:
+        return "missing"
+
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+    return f"len={len(token)} sha256={digest}"
+
+
 def decode_token(token: str):
     try:
         body, signature = token.split(".", 1)
@@ -185,9 +193,18 @@ def decode_token(token: str):
         padded_body = body + "=" * (-len(body) % 4)
         payload = json.loads(base64.urlsafe_b64decode(padded_body.encode("utf-8")))
         if payload.get("exp", 0) < int(time.time()):
+            logging.warning("Token rejected: expired token (%s)", token_debug_summary(token))
             return None
+        logging.info(
+            "Token accepted (%s) sub=%s provider=%s exp=%s",
+            token_debug_summary(token),
+            payload.get("sub"),
+            payload.get("provider"),
+            payload.get("exp"),
+        )
         return payload
-    except Exception:
+    except Exception as exc:
+        logging.warning("Token rejected: invalid token (%s): %s", token_debug_summary(token), str(exc))
         return None
 
 
@@ -253,16 +270,26 @@ def extract_bearer_token(req: func.HttpRequest):
 def require_authenticated_user(req: func.HttpRequest):
     token = extract_bearer_token(req)
     if not token:
+        logging.info("Auth rejected: missing bearer token for %s", req.url)
         return None, json_response({"error": "Authentication required."}, status_code=401)
 
     payload = decode_token(token)
     if not payload:
+        logging.warning("Auth rejected: invalid bearer token for %s (%s)", req.url, token_debug_summary(token))
         return None, json_response({"error": "Session expired or invalid."}, status_code=401)
 
     user = get_user_by_email(payload["sub"])
     if not user:
+        logging.warning("Auth rejected: user profile not found for %s sub=%s", req.url, payload.get("sub"))
         return None, json_response({"error": "User profile not found."}, status_code=401)
 
+    logging.info(
+        "Auth accepted for %s sub=%s provider=%s (%s)",
+        req.url,
+        payload.get("sub"),
+        payload.get("provider"),
+        token_debug_summary(token),
+    )
     return user, None
 
 
@@ -873,7 +900,16 @@ def github_callback(req: func.HttpRequest) -> func.HttpResponse:
             save_user(user)
 
         token = issue_session_token(user)
+        logging.info(
+            "GitHub callback issued token for sub=%s provider=%s redirect_uri=%s frontend_url=%s (%s)",
+            email,
+            user.get("provider"),
+            redirect_uri,
+            FRONTEND_URL,
+            token_debug_summary(token),
+        )
         redirect_target = f"{FRONTEND_URL}?token={urllib.parse.quote(token)}&state={urllib.parse.quote(state)}"
+        logging.info("GitHub callback redirecting to %s", redirect_target)
         return func.HttpResponse(status_code=302, headers={"Location": redirect_target})
     except Exception as exc:
         logging.exception("GitHub callback failed")
