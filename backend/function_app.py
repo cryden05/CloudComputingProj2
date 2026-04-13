@@ -876,23 +876,6 @@ def github_callback(req: func.HttpRequest) -> func.HttpResponse:
         return json_response({"error": str(exc)}, status_code=500)
 
 
-@app.blob_trigger(
-    arg_name="source_blob_stream",
-    path="%DATASET_CONTAINER_NAME%/%SOURCE_BLOB_NAME%",
-    connection="AZURE_STORAGE_CONNECTION_STRING",
-)
-def process_updated_dataset(source_blob_stream: func.InputStream):
-    blob_name = getattr(source_blob_stream, "name", get_setting("SOURCE_BLOB_NAME", DEFAULT_SOURCE_BLOB))
-    logging.info("Blob trigger received update for %s", blob_name)
-
-    try:
-        refresh_pipeline_from_source("blob-trigger")
-        logging.info("Pipeline refresh completed for %s", blob_name)
-    except Exception as exc:
-        logging.exception("Pipeline refresh failed for %s: %s", blob_name, str(exc))
-        raise
-
-
 @app.route(route="getDietData", methods=["GET", "OPTIONS"])
 def get_diet_data(req: func.HttpRequest) -> func.HttpResponse:
     if is_options(req):

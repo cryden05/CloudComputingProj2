@@ -11,7 +11,7 @@ The goal of Phase 2 is to move the Phase 1 local solution into Azure and demonst
 
 ## Architecture
 1. The diet dataset CSV is stored in Azure Blob Storage.
-2. A blob-triggered Azure Function watches `All_Diets.csv` and runs the cleaning pipeline only when the source blob changes.
+2. The backend checks the source blob `etag` during authenticated API requests and refreshes cached artifacts only when the source data changes.
 3. The pipeline saves a cleaned CSV and precomputes JSON results for dashboard insights and recipe browsing.
 4. The precomputed artifacts are stored back in Blob Storage as cache blobs.
 5. HTTP requests read the cache instead of recalculating analytics on every request.
@@ -102,7 +102,7 @@ The dashboard includes at least three required visualizations:
 
 ## How the Dashboard Works
 1. A user opens the dashboard page.
-2. If the dataset has changed, the blob trigger refreshes the cleaned CSV and cache blobs once.
+2. If the dataset has changed, the backend refreshes the cleaned CSV and cache blobs once.
 3. The frontend sends a request to the deployed Azure Function.
 4. The Azure Function reads the precomputed cache blobs instead of recalculating from the source CSV.
 5. The frontend updates the visualizations and metadata using the cached JSON response.
@@ -114,7 +114,7 @@ The dashboard includes at least three required visualizations:
 
 ## Demo Flow For Performance / Backend Optimization
 1. Upload or modify `All_Diets.csv` in the configured blob container.
-2. Wait for the blob trigger to run once and refresh the cache.
+2. Trigger a cache-aware API request so the backend refreshes the cache when the source `etag` changes.
 3. Open `GET /api/cacheStatus` and note the `sourceEtag` and `pipelineGeneratedAt` values.
 4. Call `GET /api/getDietData` two or more times.
 5. Show that the response metadata includes `requestServedFromCache: true` and does not require recalculation.
@@ -147,7 +147,7 @@ The deployed Static Web App uses same-origin `/api` automatically. For local dev
 - The logged-in user name is displayed with a logout button
 - Azure Function endpoint returns JSON successfully
 - Dataset is read from Azure Blob Storage
-- Blob trigger runs when the source CSV changes
+- Cached artifacts refresh automatically when the source CSV changes
 - Cleaned CSV blob is written successfully
 - Cache blobs are written successfully
 - Dashboard loads live data on page load
