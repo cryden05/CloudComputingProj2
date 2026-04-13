@@ -213,6 +213,19 @@ function loadOAuthState() {
   return sessionStorage.getItem(OAUTH_STATE_KEY) || localStorage.getItem(OAUTH_STATE_KEY);
 }
 
+function getOAuthReturnParams() {
+  const url = new URL(window.location.href);
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : "";
+  const hashParams = new URLSearchParams(hash);
+  const searchParams = url.searchParams;
+
+  return {
+    url,
+    token: hashParams.get("token") || searchParams.get("token"),
+    state: hashParams.get("state") || searchParams.get("state")
+  };
+}
+
 function setAuthenticatedView(user) {
   currentUser = user || null;
 
@@ -930,9 +943,7 @@ async function startGithubLogin() {
 }
 
 function captureOAuthTokenFromUrl() {
-  const url = new URL(window.location.href);
-  const token = url.searchParams.get("token");
-  const returnedState = url.searchParams.get("state");
+  const { url, token, state: returnedState } = getOAuthReturnParams();
   if (!token) return false;
 
   const expectedState = loadOAuthState();
@@ -942,6 +953,7 @@ function captureOAuthTokenFromUrl() {
     setAuthMessage("OAuth verification failed. Please try GitHub login again.", "error");
     url.searchParams.delete("token");
     url.searchParams.delete("state");
+    url.hash = "";
     window.history.replaceState({}, "", url.toString());
     return false;
   }
@@ -950,6 +962,7 @@ function captureOAuthTokenFromUrl() {
   saveOAuthState("");
   url.searchParams.delete("token");
   url.searchParams.delete("state");
+  url.hash = "";
   window.history.replaceState({}, "", url.toString());
   setAuthMessage("GitHub sign-in complete. Loading your dashboard...", "success");
   return true;

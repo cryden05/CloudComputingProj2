@@ -908,7 +908,7 @@ def github_callback(req: func.HttpRequest) -> func.HttpResponse:
             FRONTEND_URL,
             token_debug_summary(token),
         )
-        redirect_target = f"{FRONTEND_URL}?token={urllib.parse.quote(token)}&state={urllib.parse.quote(state)}"
+        redirect_target = f"{FRONTEND_URL}#token={urllib.parse.quote(token)}&state={urllib.parse.quote(state)}"
         logging.info("GitHub callback redirecting to %s", redirect_target)
         return func.HttpResponse(status_code=302, headers={"Location": redirect_target})
     except Exception as exc:
